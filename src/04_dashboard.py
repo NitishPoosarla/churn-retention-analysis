@@ -1,0 +1,118 @@
+"""01-telco-churn — 04_dashboard.py — single-file interactive HTML dashboard."""
+from pathlib import Path
+import json
+
+import pandas as pd
+
+PROJECT = Path(__file__).resolve().parent.parent
+OUT = PROJECT / "outputs"
+
+HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Telco Retention Decision Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  body {{ font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 24px; background: #f5f6fa; color: #1e2757; }}
+  h1 {{ font-size: 22px; }}
+  .kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }}
+  .card {{ background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
+  .card b {{ display: block; font-size: 26px; }}
+  .card small {{ color: #666; }}
+  .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }}
+  .chart-card {{ background: #fff; border-radius: 10px; padding: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
+  canvas {{ max-height: 320px; }}
+  button {{ background: #2f3542; color: #fff; border: 0; padding: 10px 18px; border-radius: 8px; cursor: pointer; margin-bottom: 16px; }}
+  .foot {{ margin-top: 20px; font-size: 12px; color: #777; }}
+</style>
+</head>
+<body>
+<h1>Telco Churn — Retention Decision Dashboard</h1>
+<p><i>Every number below is computed and verified in Python from the IBM Telco dataset; this dashboard only visualizes them.</i></p>
+<button onclick="exportPDF()">Export PDF</button>
+<div id="board">
+  <div class="kpis">
+    <div class="card"><b>{total:,}</b><small>customers analyzed</small></div>
+    <div class="card"><b>{churn_rate:.1%}</b><small>churn rate ({churners:,} churners)</small></div>
+    <div class="card"><b>${mrr:,.0f}</b><small>monthly revenue at risk</small></div>
+    <div class="card"><b>ROI {roi:.1f}x</b><small>12-mo retention program (stated assumptions)</small></div>
+  </div>
+  <div class="grid">
+    <div class="chart-card"><canvas id="c1"></canvas></div>
+    <div class="chart-card"><canvas id="c2"></canvas></div>
+    <div class="chart-card"><canvas id="c3"></canvas></div>
+    <div class="chart-card"><canvas id="c4"></canvas></div>
+  </div>
+  <p class="foot">Data: IBM Telco Customer Churn (7,043 customers, public dataset). ROI scenario: $50/contact, 10% save rate, $10k budget — assumptions are stated, not measured. AUC = {auc:.2f}.</p>
+</div>
+<script>
+const DATA = {payload};
+new Chart(c1, {{ type: 'bar', options: {{ plugins: {{ title: {{ display: true, text: 'Churn by contract (%)' }} }}, scales: {{ y: {{ beginAtZero: true }} }} }}, data: DATA.churnByContract }});
+new Chart(c2, {{ type: 'bar', options: {{ plugins: {{ title: {{ display: true, text: 'Churn by tenure bucket (%)' }} }}, scales: {{ y: {{ beginAtZero: true }} }} }}, data: DATA.churnByTenure }});
+new Chart(c3, {{ type: 'bar', options: {{ plugins: {{ title: {{ display: true, text: 'Churn by payment method (%)' }} }}, scales: {{ y: {{ beginAtZero: true }} }} }}, data: DATA.churnByPayment }});
+new Chart(c4, {{ type: 'bar', options: {{ plugins: {{ title: {{ display: true, text: 'Customers vs churners by service' }} }}, scales: {{ y: {{ beginAtZero: true }} }} }}, data: DATA.byServices }});
+function exportPDF() {{
+  if (!window.jspdf || !window.html2canvas) {{
+    alert('PDF export needs the CDN scripts — connect to the internet, or use your browser: Print → Save as PDF.');
+    return;
+  }}
+  html2canvas(document.getElementById('board'), {{ scale: 2 }}).then(canvas =>
+    {{ const doc = new jspdf.jsPDF({{ orientation: 'landscape' }});
+      doc.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 10, 10, 277, 190);
+      doc.save('telco-churn-dashboard.pdf'); }});
+}}
+</script>
+</body>
+</html>"""
+
+
+def main() -> None:
+    kpis = json.loads((OUT / "kpis.json").read_text())
+    ev = json.loads((OUT / "model_eval.json").read_text())
+    df = pd.read_csv(PROJECT / "data" / "processed" / "telco_clean.csv")
+
+    def rate_group(col: str) -> dict:
+        g = df.groupby(col).agg(n=("churn_flag", "size"),
+                                r=("churn_flag", "mean"))
+        return {"labels": list(g.index.astype(str)),
+                "datasets": [{"label": "churn %",
+                              "data": [round(x * 100, 1) for x in g.r],
+                              "backgroundColor": "#4b7bec"}]}
+
+    services = ["PhoneServiceYes", "InternetServiceFiber optic"]
+    by_services = {
+        "labels": ["Phone service", "Fiber optic internet"],
+        "datasets": [
+            {"label": "Customers", "data": [int((df["PhoneService"] == "Yes").sum()),
+                                            int((df["InternetService"] == "Fiber optic").sum())], "backgroundColor": "#a4b0be"},
+            {"label": "Churners", "data": [int(df.loc[df["PhoneService"] == "Yes", "churn_flag"].sum()),
+                                           int(df.loc[df["InternetService"] == "Fiber optic", "churn_flag"].sum())], "backgroundColor": "#d9534f"},
+        ]}
+
+    payload = {
+        "churnByContract": rate_group("Contract"),
+        "churnByTenure": rate_group("tenure_bucket"),
+        "churnByPayment": rate_group("PaymentMethod"),
+        "byServices": by_services,
+    }
+
+    html = HTML.format(
+        total=kpis["total_customers"],
+        churners=kpis["churners"],
+        churn_rate=kpis["churn_rate"],
+        mrr=kpis["mrr_at_risk_usd"],
+        roi=ev["roi_12m"],
+        auc=ev["auc"],
+        payload=json.dumps(payload, default=str),
+    )
+    dest = PROJECT / "dashboard" / "index.html"
+    dest.parent.mkdir(exist_ok=True)
+    dest.write_text(html)
+    print(f"Wrote {dest} ({len(html):,} bytes, charts embedded as JSON)")
+
+
+if __name__ == "__main__":
+    main()
