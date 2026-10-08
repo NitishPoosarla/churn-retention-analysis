@@ -1,0 +1,4 @@
+Contract,customers,churners,churn_rate,mrr_at_risk
+Month-to-month,3875,1655,0.4271,120847.1
+One year,1473,166,0.1127,14118.45
+Two year,1695,48,0.0283,4165.3

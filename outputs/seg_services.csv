@@ -1,0 +1,4 @@
+MultipleLines,customers,churners,churn_rate,mrr_at_risk
+Yes,2971,850,0.2861,75710.5
+No,3390,849,0.2504,57039.6
+No phone service,682,170,0.2493,6380.75

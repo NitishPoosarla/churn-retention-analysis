@@ -1,0 +1,10 @@
+{
+  "total_customers": 7043,
+  "churners": 1869,
+  "churn_rate": 0.2654,
+  "mrr_at_risk_usd": 139130.85,
+  "total_charges_at_risk_usd": 2862926.9,
+  "median_tenure_months_churners": 10.0,
+  "median_tenure_months_stayers": 38.0,
+  "blank_totalcharges_fixed": 11
+}
